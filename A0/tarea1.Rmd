@@ -1,0 +1,408 @@
+---
+title: "Master en Big Data. Fundamentos Matemáticos del Análisis de Datos (FMAD)."
+author: "Departamento de Matemática Aplicada"
+date: 'Curso 2021-22. Última actualización: `r format(Sys.time(), "%Y-%m-%d")`'
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+subtitle: Tarea 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Preliminares
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(haven)
+library(nycflights13)
+library(gridExtra)
+```
+
+# Instrucciones preliminares
+
++ Empieza abriendo el proyecto de RStudio correspondiente a tu repositorio personal de la asignatura. 
+
++ En todas las tareas tendrás que repetir un proceso como el descrito en la sección *Repite los pasos Creando un fichero Rmarkdown para esta práctica* de la *Práctica00*. Puedes releer la sección *Practicando la entrega de las Tareas* de esa misma práctica para recordar el procedimiento de entrega.
+
+# Ejercicio 0
+
++ Si no has hecho los *Ejercicios* de la *Práctica00* (págs. 12 y 13) hazlos ahora y añádelos a esta tarea. Si ya los has hecho y entregado a través de GitHub no hace falta que hagas nada.
+
+
+
+# Ejercicio 1. Análisis exploratorio de un conjunto de datos y operaciones con dplyr. 
+
++ Vamos a utilizar el conjunto de datos contenido en el fichero (es un enlace):  
+[cholesterol.csv](https://gist.githubusercontent.com/fsansegundo/ee991e53e1a571dd34034c42b5516eae/raw/2206455b5772e90c5a2a24a3f42a84408fd1d1c5/cholesterol.csv)  
+Los datos proceden de un estudio realizado en la *University of Virginia School of Medicine* que investiga la prevalencia de la obesidad, la diabetes y otros factores de riesgo cardiovascular. Se puede encontrar más información sobre el fichero en este enlace:  
+[https://biostat.app.vumc.org/wiki/pub/Main/DataSets/diabetes.html](https://biostat.app.vumc.org/wiki/pub/Main/DataSets/diabetes.html) 
+
++ Carga el conjunto de datos en un data.frame de R llamado `chlstrl`.
+
+```{r}
+chlstrl=read.csv("./data/cholesterol.csv")
+```
+
+
+
++ Empezaremos por información básica sobre el conjunto de datos. Cuántas observaciones contiene, cuáles son las variables y de qué tipos,...
+
+```{r}
+str(chlstrl)
+```
+
+
++ Asegúrate de comprobar si hay datos ausentes y localízalos en la tabla. 
+
+```{r}
+#Esto nos permite saber cuántos valores son NA y cuántos no lo son de la tabla completa
+table(is.na(chlstrl))
+
+#Esto nos permite saber la localización de cada valor na en la tabla (con head solo salen las 6 primeras filas)
+head(is.na(chlstrl))
+
+summary(chlstrl)
+```
+
+
++ El análisis exploratorio (numérico y gráfico) debe cubrir todos los tipos de variable de la tabla. Es decir, que al menos debes estudiar una variable por cada tipo de variable presente en la tabla. El análisis debe contener, al menos:
+  - Para las variables cuantitativas (continuas o discretas).  
+    Resumen numérico básico.  
+    Gráficas (las adecuadas, a ser posible más de un tipo de gráfico).  
+    
+```{r}
+#Recorrido intercuartílico
+IQR(chlstrl$chol,na.rm=TRUE)
+```
+
+
+```{r}
+#Los valores atípicos
+unname(quantile(chlstrl$chol,probs=c(1/4, 3/4), na.rm=TRUE) + c(-1,1) * 1.5 * IQR(chlstrl$chol,na.rm=TRUE))
+```
+
+```{r}
+#La desviación estándar
+sd(chlstrl$chol, na.rm=TRUE)
+```
+```{r}
+#La varianza
+var(chlstrl$chol, na.rm=TRUE)
+```
+
+1)HISTOGRAMA
+
+```{r}
+summary(chlstrl$chol)
+
+#En este chunk se realiza el histograma de la variable colesterol, interpretada como continua
+
+cortes=seq(min(chlstrl$chol, na.rm=T),max(chlstrl$chol, na.rm=T), length.out=26)
+
+ggplot(chlstrl, aes(chol)) +
+geom_histogram(aes(y=stat(density)),breaks=cortes, fill="orange", color="black") +
+geom_density(color="red",size=1.5)
+```
+
+2)Violin/Boxplot
+
+```{r}
+
+#Aqui se realiza el diagrama boxplot/violín/dispersión de una variable discreta
+ggplot(chlstrl)+
+  geom_violin(mapping = aes(x=0, y=chol))+
+  geom_boxplot(mapping = aes(y=chol),fill="orange") + 
+  geom_jitter(aes(x=0, y=chol),
+              position=position_jitter(w=0.05, h=0), col="blue")
+```
+    
+  - Variables categóricas (factores).  
+    Tablas de frecuencia (absolutas y relativas).  
+    Gráficas (diagrama de barras). 
+    
+```{r}
+summary(chlstrl$gender)
+#table(chlstrl$gender)
+#prop.table(table(chlstrl$gender))
+
+
+#Tabulación de géneros según su frecuencia
+chlstrl %>%
+  count(gender)
+```
+```{r}
+
+#Tabulación de géneros según su frecuencia relativa 
+
+chlstrl %>% 
+  count(gender) %>%
+    mutate(gender, relFreq = prop.table(n), n=NULL)
+```
+
+
+```{r}
+ggplot(chlstrl) + 
+  geom_bar(aes(gender, fill=gender))
+```
+    
+
++ Los valores de `height` y `weight` están en pulgadas (inches) y libras (pounds) respectivamente. Una libra son $\approx$ 0.454kg y una pulgada son $\approx$ 0.0254m.  Usa dplyr para convertir esas columnas a metros y kilogramos respectivamente.  Las nuevas columnas deben llamarse igual que las originales. 
+
+```{r}
+
+#Sustitución de las columnas de peso y altura por sus equivalentes en el sistema métrico
+chlstrl=chlstrl %>% 
+  mutate(height=height*0.0254, weight=weight*0.454)
+
+(chlstrl)
+```
+
++ Ahora usa esos valores de `height` y `weight` para añadir una nueva columna llamada BMI, definida mediante:
+$$BMI = \dfrac{weight}{height^2}$$
+(se divide por el cuadrado de la altura). 
+```{r}
+
+#Creación de la columna BMI a partir de peso y altura
+
+chlstrl=chlstrl %>% 
+  mutate(BMI=weight/(height^2))
+
+(chlstrl)
+```
+
+
++ Crea una nueva columna llamada `ageGroup` dividiendo la edad en los siguientes tres niveles:
+  ```{r echo=FALSE, comment=NULL}
+  cat("(10,40], (40,70], (70,100]")
+  ```
+```{r}
+#Clasificación de todas las filas como parte de un grupo de edad determinado en forma de nueva columna
+
+(chlstrl=chlstrl %>% 
+  mutate(ageGroup=cut(age,breaks=c(10,40,70,100))))
+```
+  
+
++ Usando `dplyr` calcula cuántas observaciones hay en cada nivel de `ageGroup` (indicación: usa `group_by`). Ahora, usando aquellas observaciones que corresponden a mujeres, ¿cuál es la media del nivel de colesterol y de BMI en cada uno de esos grupos de edad?
+
+```{r}
+
+#Frecuencia de cada grupo de edad
+
+(chlstrl %>% 
+  count(ageGroup))
+```
+
+
+```{r}
+
+#Cálculo de la media del colesterol y BMI por grupos de edad
+
+(chlstrl %>% 
+  filter(gender=='female') %>% 
+    group_by(ageGroup) %>% 
+    summarise(MedChol=mean(chol, na.rm = TRUE), MedBMI=mean(BMI, na.rm=TRUE)))
+```
+
+
+# Ejercicio 2: Funciones de R.
+
++ Crea una función de R llamada `cambiosSigno` que dado un vector `x` de números enteros no nulos, como 
+    ```{r echo=FALSE, comment=NULL}
+    set.seed(2019)
+    x = sample(c(-1, 1), 9, replace = TRUE) * sample(1:20, 9, replace = TRUE)
+    cat(paste0(x, sep=", "))
+    ```
+  
+  calcule cuántos cambios de signo ha habido. Es decir, cuántas veces el signo de un elemento es distinto del signo del elemento previo. Por ejemplo, en el vector anterior hay 4 cambios de signo (en las posiciones 3, 4, 7 y 8). 
+  
+```{r}
+cambiossigno=function(x=sample(c(-1,1), 9, replace = TRUE) * sample(1:20, 9, replace = TRUE)){
+  sol=list()
+  a=length(x)
+  cs=0
+  for(y in 1:(a-1)){
+    if ((x[y]>0)==TRUE && (x[y+1]<0)==TRUE){
+      cs=cs+1
+      
+    }else if ((x[y]<0)==TRUE && (x[y+1]>0)==TRUE){
+      cs=cs+1
+    }
+  }
+  sol$vector=x
+  sol$cambSigno=cs
+  returnValue(sol)
+}
+cambiossigno(x)
+cambiossigno()
+```
+  
++ Modifica la función para que devuelva como resultado las posiciones donde hay cambios de signo. Llama `cambiosSignoPos(x)` a esa otra función. Por ejemplo, para el vector anterior el resultado de esta función sería
+    ```{r echo=FALSE, results='asis'}
+    cat("[1] 3 4 7 8")
+    ```
+    
+```{r}
+cambiossignopos=function(x=sample(c(-1,1), 9, replace = TRUE) * sample(1:20, 9, replace = TRUE)){
+  sol=list()
+  a=length(x)
+  pos=c()
+  for(y in 1:(a-1)){
+    if ((x[y]>0)==TRUE && (x[y+1]<0)==TRUE){
+      pos=append(pos,y+1)
+    }else if ((x[y]<0)==TRUE && (x[y+1]>0)==TRUE){
+      pos=append(pos,y+1)
+    }
+  }
+  sol$vector=x
+  sol$posiciones=pos
+  returnValue(sol)
+}
+cambiossignopos(x)
+```
+    
+    También se valorará que incluyas en el código como usar `sample` para generar vectores aleatorios de 20 enteros *no nulos* (el vector debe poder tomar valores positivos y negativos).
+
+# Ejercicio 3. R4DS.
+
+Es recomendable que esta semana del curso  hagas al menos una lectura somera de los Capítulos 1 a 5 de [R for Data Science (R4DS), de H. Wickham](https://r4ds.had.co.nz/index.html), con énfasis especial en los Capítulos 3 y 5 (los capítulos 1, 2 y 4 son muy breves). Los siguientes apartados pretenden motivar esa lectura y por eso mismo pueden resultar un poco más laboriosos.  
+
++ Haz el [ejercicio 6 de la Sección 3.6.1 de R4DS](https://r4ds.had.co.nz/data-visualisation.html#exercises-3).
+
+```{r}
+ggplot(data = mpg, mapping = aes(x = displ, y = hwy)) + 
+  geom_point() + 
+  geom_smooth()
+
+```
+
+```{r}
+g1=ggplot() + 
+  geom_point(data = mpg, mapping = aes(x = displ, y = hwy)) + 
+  geom_smooth(data = mpg, mapping = aes(x = displ, y = hwy), se=FALSE)
+```
+
+
+```{r}
+g2=ggplot() + 
+  geom_point(data = mpg, mapping = aes(x = displ, y = hwy)) + 
+  geom_smooth(data = mpg, mapping = aes(x = displ, y = hwy,group=drv), se=FALSE)
+```
+
+
+
+```{r}
+g3=ggplot() + 
+  geom_point(data = mpg, mapping = aes(x = displ, y = hwy, color=drv)) + 
+  geom_smooth(data = mpg, mapping = aes(x = displ, y = hwy, color=drv), se=FALSE)
+```
+
+
+```{r}
+g4=ggplot() + 
+  geom_point(data = mpg, mapping = aes(x = displ, y = hwy, color=drv)) + 
+  geom_smooth(data = mpg, mapping = aes(x = displ, y = hwy), se=FALSE)
+```
+
+
+```{r}
+g5=ggplot() + 
+  geom_point(data = mpg, mapping = aes(x = displ, y = hwy, color=drv)) + 
+  geom_smooth(data = mpg, mapping = aes(x = displ, y = hwy, linetype=drv), se=FALSE)
+```
+
+
+```{r}
+g6=ggplot() + 
+  geom_point(data = mpg, mapping = aes(x = displ, y = hwy, fill=drv), shape = 21,color="white",size = 2.5, stroke = 1.5)
+```
+```{r}
+grid.arrange(g1,g2,g3,g4,g5,g6,nrow = 3)
+```
+
++ Haz el [ejercicio 1 de la Sección 5.2.4 de R4DS](https://r4ds.had.co.nz/transform.html#exercises-8). 
+
+Find all flights that
+
+Had an arrival delay of two or more hours
+
+```{r}
+flights %>% 
+  filter(arr_delay>=120)
+```
+
+
+Flew to Houston (IAH or HOU)
+(2 opciones distintas)
+
+```{r}
+flights %>% 
+filter(dest=='IAH'| dest=='HOU')
+
+flights %>% 
+filter(dest %in% c('IAH','HOU'))
+
+```
+
+Were operated by United, American, or Delta
+
+```{r}
+flights %>% 
+filter(carrier=='UA'| carrier=='AA' | carrier=='DL')
+
+flights %>% 
+filter(carrier %in% c('UA','AA','DL'))
+```
+
+
+
+Departed in summer (July, August, and September)
+(2 opciones distintas)
+
+```{r}
+flights %>% 
+filter(month==7 | month==8 | month==9 )
+
+flights %>% 
+filter(month %in% c(7:9))
+```
+
+
+Arrived more than two hours late, but didn’t leave late
+
+```{r}
+flights %>% 
+filter(arr_delay >120, dep_delay<=0) 
+```
+
+
+
+Were delayed by at least an hour, but made up over 30 minutes in flight
+
+```{r}
+flights %>% 
+filter(dep_delay >=60,arr_delay<(dep_delay-30))
+```
+
+
+
+Departed between midnight and 6am (inclusive)
+
+
+```{r}
+flights %>% 
+filter(dep_time==2400 | dep_time<=600) 
+```
+
+
+
+
+
+
+
+
+
