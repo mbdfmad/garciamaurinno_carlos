@@ -1,0 +1,278 @@
+---
+title: "Master en Big Data. Fundamentos Matemáticos del Análisis de Datos (FMAD)."
+author: "Departamento de Matemática Aplicada"
+date: 'Curso 2021-22. Última actualización: `r format(Sys.time(), "%Y-%m-%d")`'
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+subtitle: Tarea 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/MASTERBD/FundamentosMatematicos/GITHUB/Tarea/2")
+```
+
+# Instrucciones preliminares
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(nycflights13)
+```
+
+
++ Empieza abriendo el proyecto de RStudio correspondiente a tu repositorio personal de la asignatura. 
+
++ En todas las tareas tendrás que repetir un proceso como el descrito en la sección *Repite los pasos Creando un fichero Rmarkdown para esta práctica* de la *Práctica00*. Puedes releer la sección *Practicando la entrega de las Tareas* de esa misma práctica para recordar el procedimiento de entrega.
+
+# Ejercicio 1. Simulando variables aleatorias discretas.
+
+**Apartado 1:** La variable aleatoria discreta $X1$ tiene esta tabla de densidad de probabilidad (es la variable que se usa como ejemplo en la Sesión ):
+$$
+\begin{array}{|c|c|c|c|c|c|c|}
+\hline
+\text{valor de }X1 & 0 & 1 & 2 & 3 \\
+\hline
+\text{Probabilidad de ese valor }P(X = x_i) & \dfrac{64}{125} &
+\dfrac{48}{125}& \dfrac{12}{125} & \dfrac{1}{125}\rule{0mm}{6mm} \\[3mm]
+\hline
+\end{array}
+$$
+Calcula la media y la varianza teóricas de esta variable.
+
+
+```{r}
+X1=c(0:3)
+pX1=c(64/125,48/125,12/125,1/125)
+(tableX1=data.frame(X1,pX1=pX1))
+#Media teórica
+(mu_t=sum(X1*pX1))
+#Varianza teórica
+(var_t=sum(((X1-mu_t)^2)*pX1))
+```
+
+
+**Apartado 2:**  Combina `sample` con `replicate` para simular cien mil muestras de tamaño 10 de esta variable $X1$. Estudia la distribución de las medias muestrales como hemos hecho en ejemplos previos, ilustrando con gráficas la distribución de esas medias muestrales. Cambia después el tamaño de la muestra a 30 y repite el análisis. 
+
+```{r}
+set.seed(2021)
+k=100000
+n=10
+mediasMuestral1 = replicate(k, {
+  muestra = sample(X1, n, replace = TRUE,prob=pX1)
+  mean(muestra)
+})
+
+#Histograma de mediamuestral1 (tamaño 10)
+hist(mediasMuestral1, breaks = 20, main="",
+     col="peachpuff", probability = TRUE, xlim=range(X1))
+abline(v = mu_t, lty=2, lwd=5, col="blue")
+m=30
+mediasMuestral2 = replicate(k, {
+  muestra = sample(X1, m, replace = TRUE,prob=pX1)
+  mean(muestra)
+})
+
+#Histograma de mediamuestral1 (tamaño 30)
+hist(mediasMuestral2, breaks = 20, main="",
+     col="peachpuff", probability = TRUE, xlim=range(X1))
+abline(v = mu_t, lty=2, lwd=5, col="blue")
+```
+
+
+**Apartado 3:** La variable aleatoria discreta $X2$ tiene esta tabla de densidad de probabilidad:
+$$
+\begin{array}{|c|c|c|c|c|c|}
+\hline
+\text{valor de }X2 & 0 & 1 & 2 \\
+\hline
+\text{Probabilidad de ese valor }P(X = x_i) & \dfrac{1}{2} &
+\dfrac{1}{4}&  \dfrac{1}{4}\rule{0mm}{6mm} \\[3mm]
+\hline
+\end{array}
+$$
+Suponemos que $X1$ y $X2$ son independientes. ¿Qué valores puede tomar la suma $X1 + X2$? ¿Cuál es su tabla de probabilidad?
+
+```{r}
+X2=c(0:2)
+pX2=c(1/2,1/4,1/4)
+(tableX2=data.frame(X2,pX2))
+
+#Media teórica
+(mu_t1=sum(X2*pX2))
+#Varianza teórica
+(var_t1=sum(((X2-mu_t1)^2)*pX2))
+(pos=merge(tableX1$X1,tableX2$X2) %>%
+  
+    
+#Valores de la suma X1 +X2 con tabla de probabilidad   
+mutate(posSum=x+y,prob=rep(tableX1$pX1,times=3)*rep(tableX2$pX2,each=4)))
+pos$posSum=as.factor(pos$posSum)
+
+pos %>%
+  group_by(posSum) %>%
+  summarise(prob=sum(prob))
+```
+
+**Apartado 4:** Calcula la media teórica de la suma $X_1 + X_2$. Después usa `sample` y `replicate` para simular cien mil *valores* de esta variable suma. Calcula la media de esos valores. *Advertencia:* no es el mismo tipo de análisis que hemos hecho en el segundo apartado. 
+```{r}
+#Media teórica de la suma X1 y X2
+(mu_t2=sum(as.numeric(paste(pos$posSum))*pos$prob))
+set.seed(2021)
+k=100000
+n1=1
+
+mediasMuestral3 = replicate(k, {
+  muestraX1 = sample(X1, n1, replace = TRUE,prob=pX1)
+  muestraX2 = sample(X2, n1, replace = TRUE,prob=pX2)
+  mean(muestraX1) + mean(muestraX2)
+})
+
+#Media con k valores de medias muestrales
+(mediaFinal=mean(mediasMuestral3))
+
+```
+
+
+# Ejercicio 2. Datos limpios
+
++ Descarga el fichero de este enlace  
+
+[https://gist.githubusercontent.com/fernandosansegundo/471b4887737cfcec7e9cf28631f2e21e/raw/b3944599d02df494f5903740db5acac9da35bc6f/testResults.csv](https://gist.githubusercontent.com/fernandosansegundo/471b4887737cfcec7e9cf28631f2e21e/raw/b3944599d02df494f5903740db5acac9da35bc6f/testResults.csv) 
+
++ Este fichero contiene las notas de los alumnos de una clase, que hicieron dos tests cada semana durante cinco semanas. La tabla de datos no cumple los principios de *tidy data* que hemos visto en clase. Tu tarea en este ejercicio es explicar por qué no se cumplen y obtener una tabla de datos limpios con la misma información usando *tidyR*.  
+**Indicación:** lee la ayuda de la función `separate` de *tidyR*.
+
+```{r}
+test=read_csv("./data/datatestResults.csv")
+```
+
+Para hacer la lista tidy, se han agrupado las columnas week1, week2... en una columna week que contiene unicamente el numero de la semana en cuestión. Además, se han separado los valores de sexo y edad en columnas diferentes.
+
+```{r}
+testTidy=test %>% 
+  pivot_longer(week1:week5, names_to = 'week') %>% 
+  separate(gender_age, c("gender", "age")) %>% 
+  separate(week,c('x','week'), sep=4) %>% 
+  mutate(x=NULL) 
+
+#Aquí se cambian el número de semana y la edad de tipo chr a tipo numérico
+testTidy$week=as.numeric(testTidy$week)
+testTidy$age=as.numeric(testTidy$age)
+testTidy
+
+```
+
+
+# Ejercicio 3. Lectura de R4DS.
+
+Contnuando con nuestra *lectura conjunta* de este libro, si revisas el índice verás que hemos cubierto (holgadamente en algún caso) el contenido de los Capítulos 6, 8, 9, 10 y 11. Todos esos Capítulos son relativamente ligeros.  Por eso esta semana conviene detenerse un poco en la lectura de los Capítulos 7 y 12, que son los más densos en información. Y como motivación os proponemos un par de ejercicios, uno por cada uno de esos capítulos. 
+
++ Haz el [ejercicio 2 de la Sección 7.5.1.1 de R4DS](https://r4ds.had.co.nz/exploratory-data-analysis.html#exercises-17). Las ideas de esa sección son importantes para nuestro trabajo de las próximas sesiones.
+
+Como se puede observar, hay una relacion existente entre el precio y el quilate, ya que, por lo general, a mayor kilate tendriamos un mayor precio.
+
+```{r}
+ggplot(diamonds, aes(x = carat, y = price)) +
+  geom_point()
+```
+Como se puede ver, el valor de la variable corte no influye en el precio del diamante y no hay tendencias observables.
+
+```{r}
+ggplot(diamonds, aes(x = cut, y = price)) +
+  geom_boxplot()
+```
+
+
+No hay relación ninguna entre depth y precio, para un valor cualquiera de depth tenemos un rango extremadamente amplio de precios.No hay tendencias observadas.
+
+```{r}
+ggplot(diamonds, aes(x = depth, y = price)) +
+  geom_point()
+```
+No hay relación ninguna entre table y precio, para un valor cualquiera de table tenemos un rango extremadamente amplio de precios. No hay tendencias observadas.
+
+```{r}
+ggplot(diamonds, aes(x = table, y = price)) +
+  geom_point()
+```
+
+Primero ordenamos el color en orden ascendente en el que J es el menos preferible y D el más preferible. Tras esto llegamos a la conclusión de que no hay una relación clara entre precio y color, y solo podemos observar una mayor variabilidad cuanto más nos acercamos a J.
+
+```{r}
+diamonds %>%
+  mutate(color = fct_rev(color)) %>%
+  ggplot(aes(x = color, y = price)) +
+  geom_boxplot()
+
+```
+No hay relación entre claridad y precio, a destacar está que la variabilidad del precio aumenta en las categorías centrales de la claridad y disminuye hacia ambos extremos.
+
+```{r}
+ggplot(data = diamonds) +
+  geom_boxplot(mapping = aes(x = clarity, y = price))
+```
+Buscamos correlación entre quilate (que tiene correlación con precio) y corte.Como se puede observar, la variabilidad del corte 'fair' es baja, y su mediana es la mayor de entre todos los cortes. Esto nos lleva a la conclusión de que en un corte 'fair' hay más valores de quilate alto. Como en la tabla quilate vs precio vemos que hay una relación lineal (mayor quilate, mayor precio generalmente), podemos concluir que a menor calidad (corte 'fair'), mayor precio (mayor quilate).
+
+```{r}
+ggplot(diamonds, aes(x = cut, y = carat)) +
+  geom_boxplot()
+```
+
++ Haz el [ejercicio 4 de la Sección 12.6.1 de R4DS](https://r4ds.had.co.nz/tidy-data.html#exercises-27). ¡Aprovecha el código previo de esa sección para trabajar con datos limpios!
+
+
+```{r}
+who_1=who %>%
+  pivot_longer(
+    cols = new_sp_m014:newrel_f65, 
+    names_to = "key", 
+    values_to = "cases", 
+    values_drop_na = TRUE
+  ) %>% 
+  mutate(
+    key = stringr::str_replace(key, "newrel", "new_rel")
+  ) %>%
+  separate(key, c("new", "var", "sexage")) %>% 
+  select(-new, -iso2, -iso3) %>% 
+  separate(sexage, c("sex", "age"), sep = 1)
+```
+
+
+Aquí generamos una gráfica de números de casos vs tiempo. La gráfica tiene en cuenta el país y el sexo de las personas afectadas. Como se puede ver, esto nos proporciona poca visión del impacto real por país, sobre todo en los más afectados.
+
+```{r}
+who_1 %>%
+  group_by(country, year, sex) %>%
+  summarise(cases = sum(cases)) %>%
+  unite(country_sex, country, sex, remove = FALSE) %>%
+  ggplot(aes(x = year, y = cases, group = country_sex, colour = sex)) +
+  geom_line()
+```
+
+```{r}
+
+#Aquí seleccionamos los países con más casos (>500000)
+(CountriesCases=who_1 %>% 
+   group_by(country) %>% 
+   summarise(n=sum(cases)) %>% 
+   filter(n>500000) %>% 
+   select(country))
+```
+
+Aquí se grafican los casos según el sexo. Además, la separación de tablas dependiendo del país nos permite ver los datos con mucha más claridad.
+
+```{r}
+who_1 %>% 
+  filter(country %in% CountriesCases$country) %>% 
+  group_by(country, year, sex) %>%
+  summarise(cases = sum(cases)) %>% 
+  unite(country_sex, country, sex, remove=FALSE) %>% 
+  ggplot(aes(x=year, y=cases, group =country_sex, colour=sex)) +
+  geom_line()+
+  facet_wrap(~country, scales='free_y')
+
+```
+
