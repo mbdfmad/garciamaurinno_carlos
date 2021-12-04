@@ -1,0 +1,1014 @@
+---
+title: "Proyecto NBA"
+author: "Alvaro Francisco Ruiz Cornejo, Carlos García Vázquez, Carlos García-Mauriño Villanueva"
+date: "13/11/2021"
+output: pdf_document
+---
+
+
+## **1. PREPROCESADO**
+
+En primer lugar, se cargan las librerías necesarias para el desarrollo del trabajo.
+
+```{r echo = TRUE, message = FALSE, eval = TRUE}
+library(tidyverse)
+library(readxl)
+```
+
+A continuación, se cargan los datasets que se van a utilizar y comprobamos las cinco primeras líneas de cada uno de ellos para conocer su forma y datos principales.
+
+```{r message = FALSE}
+NBAStats <- read_excel("data/NBAStats.xlsx")
+NBAStats2 <- read_csv("data/Stats2.csv")
+```
+
+```{r}
+head(NBAStats, 5)
+head(NBAStats2, 5)
+```
+
+
+El siguiente paso sería *limpiar los datos de la tabla.* Esto es, eliminar columnas con valores nulos que han sido mal importadas. La primera tabla no contiene columnas vacias de datos, la segunda sí. Por tanto, se procede a realizar un limpiado del segundo dataset:
+
+
+```{r}
+NBAStats2 <- NBAStats2 %>%
+  select(-...20,-...25)
+```
+
+$\quad$
+
+Para poder trabajar con ambas tablas, se ha realizado un *merge*, renonmbrando algunas columnas para una mejor compresión y accesibilidad, así como eliminando algunas variables que no aportan especial interés de estudio.
+
+
+```{r}
+TotalNBA <- merge(x = NBAStats, y = NBAStats2, by = c("Rk","Tm"))
+
+NBADef <-  TotalNBA %>%
+  select(-GS, -PF, -'eFG%', -Player.y, -Pos.y, -Age.y, -G.y, -MP.y, -FTr, -'WS/48', 
+         -OBPM, -DBPM, -VORP)
+
+NBADef <- rename(NBADef, Player = Player.x, Pos = Pos.x, Age = Age.x, G = G.x, MP = MP.x)
+```
+
+$\quad$
+
+En algunos casos, nos encontramos con jugadores que han jugado en dos posiciones (por ejemplo, SF-PF), por lo que únicamente se va a dejar la primera que supuestamente, es la principal (SF).
+
+```{r warning = FALSE}
+NBADef <- NBADef %>% 
+  separate(col = Pos, sep = "-", into = c("Pos", NULL))
+```
+
+$\quad$
+
+Además, se comprueba como en el dataset hay otra variable muy importante como lo es el nombre del jugador, que se encuentra separada por el caracter "--" de una abreviatura extraña (por ejemplo, Gary Clark--clarkga01) que realmente ni aporta nada ni resulta estético para futuros estudios que devuelvan como salida el nombre del jugador. Por tanto, eliminamos la abreviatura en todos los campos de la variable, dejando así únicamente el nombre del jugador.
+
+```{r warning = FALSE}
+NBADef <- NBADef %>% 
+  separate(col = Player, sep = '--', into = c("Player", NULL))
+```
+
+
+$\quad$
+
+También es necesario eliminar aquellas observaciones cuyo equipo es *TOT* (significa que ha jugado para dos o más equipos diferentes ese año). Por tanto, esa observación contiene la suma de los valores obtenido para los equipos para los que ha jugado (suma de puntos, suma de rebotes, suma de...). Esto no resulta útil para el estudio ya que desvirtuaría algunas estadísticas por tener observaciones con sumas de otras.
+
+```{r}
+NBADef <- NBADef %>% 
+  filter(Tm != "TOT")
+```
+
+$\quad$
+
+Por último, los valores nulos se cambian a 0 a la vez que algunas variables de tipo caracter se convierten en factor para tratarlas en el análisis.
+
+```{r}
+# Valores nulos a 0
+NBADef <-  mutate_all(NBADef, ~ replace(., is.na(.), 0))
+
+# Cambio de las variables de tipo caracter a factor
+catvars = c(2,4)
+NBADef[c(catvars)] = lapply(NBADef[c(catvars)] , factor)
+
+# El resto de variables (algunos datos numéricos vienen como caracter) a numéricas
+numericvars <- c(5:42)
+NBADef[c(numericvars)] <- lapply(NBADef[c(numericvars)], as.numeric)
+```
+
+$\quad$
+
+Antes de empezar con los cálculos, vamos a comprobar alguna información básica acerca del dataset definitivo que se va a utilizar para el resto del trabajo.
+
+```{r}
+# Dimensiones del dataset, número de filas y columnas respectivamente
+dim(NBADef)
+```
+
+
+```{r}
+# ¿Hay algún dato ausente?
+any(is.na(NBADef))
+```
+
+
+```{r}
+# ¿Cuáles son las variables y de qué tipo?
+head(summary.default(NBADef), 10)
+# str(NBADef) Da información más completa
+# summary(NBADef) Da información más específica
+```
+
+$\quad$
+
+Con todas estas modificaciones, ya se tiene un dataset limpio, con variables útiles y accesibles e información completa para comenzar la siguiente parte del trabajo.
+
+
+$\quad\\[20.5mm]$
+
+
+## **2. RESULTADOS**
+
+En primer lugar, es importante mencionar que las estadísticas están ponderadas por partido. Esto es, son las estadísticas totales de la temporada dividida entre el número de partidos que un jugador ha disputado para un determinado equipo.
+
+
+$\quad$
+
+
+### **2.1. Uso de *dplyr* y *ggplot***
+
+Como primer acercamiento, se van a hacer algunas operaciones básicas de *dplyr* (select, arrange, filter, summarise...) sobre la base de datos con el objetivo de extraer alguna información que pueda resultar como estadísticas interesantes. 
+
+$\quad$
+
++ **Media de edad por equipos**
+
+Agrupando por equipos, se puede hacer la media de edad de los jugadores que lo componen, descubriendo así los 5 equipos con más jugadores veteranos (media más alta).
+
+```{r}
+NBADef %>% 
+  group_by(Tm) %>% 
+  summarise(mediaEdad = round(mean(Age),2)) %>% 
+  arrange(desc(mediaEdad)) %>% 
+  head(5)
+```
+
+$\quad$
+
++ **Jugadores que han jugado en más equipos diferentes durante la temporada**
+
+Agrupando por jugador, es posible contar los equipos diferentes en los que éstos han jugado en la temporada de estudio. Ordenándolos de mayor a menor, queda:
+
+```{r}
+NBADef %>% 
+  group_by(Player) %>% 
+  summarise(equiposDiferentes = n_distinct(Tm)) %>%
+  arrange(desc(equiposDiferentes)) %>% 
+  head(8)
+```
+$\quad$
+
+Asimismo, para el estudio de variables no numéricas, podemos establecer grupos de edades para realizar algunos gráficos y comprobar su distribución en la temporada 2020.
+
+```{r}
+NBADef <- NBADef %>% 
+  mutate(ageGroup = cut(Age, breaks = c(18, 22, 25, 28, 33, 40),
+                        labels = c("(18,22]", "(22, 25]", "(25, 28]", 
+                                   "(28, 33]", "(33, 40]"),
+                        include.lowest = FALSE, right = TRUE))
+```
+
+```{r}
+ggplot(data = NBADef) +
+  geom_bar(mapping = aes(x = ageGroup), colour = "white", 
+           fill = c("red", "yellow", "green", "blue", "black"), 
+           width = 0.65)
+```
+
+$\quad$
+
++ **Media de puntos por posición**
+
+```{r}
+ptosPos = NBADef %>% 
+  group_by(Pos) %>% 
+  summarise(media = mean(PTS))
+```
+
+
+```{r}
+ggplot(data = ptosPos) +
+geom_col(mapping = aes(x = Pos, y = media), colour = "white", 
+         fill = c("red", "yellow", "green", "blue", "black"), 
+         width = 0.65)
+```
+
+$\quad$
+
+Aparte de diagramas de barras y columnas, *ggplot* nos permite la representación de otros tipos de gráficos, tales como histogramas y funciones de densidad o como en este caso, la combinación de ambas. Se ha realizado para la variable *TRB* (rebotes totales por partido). También se ha realizado un violinplot de la misma variable.
+
+```{r}
+cortes = seq(min(NBADef$TRB), max(NBADef$TRB), length.out = 21)
+
+ggplot(data = NBADef, mapping = aes(x = TRB)) +
+  geom_histogram(aes(y = stat(density)), breaks = cortes, color = "black", fill = "red") +
+  geom_density(color = "yellow", size = 2)
+```
+
+
+
+```{r fig.width = 4, fig.height = 3, fig.pos = 'b', fig.align='center'}
+ggplot(data = NBADef) +
+  geom_violin(mapping = aes(x = 0, y = TRB)) + scale_x_discrete(breaks = c()) +
+  geom_boxplot(mapping = aes(y = TRB), fill = "yellow") +
+  geom_jitter(aes(x = 0, y = TRB), position = position_jitter(w = 0.05, h = 0), 
+              col = "red")
+```
+
+$\quad$
+
+También se puede estudiar la normalidad de la variable *TRB* mediante un *qqplot*. Tal y como era de esperar a simple vista con los gráficos obtenidos anteriormente, dicha variable no sigue una distribución normal. Esto, se puede comprobar de manera más precisa en el siguiente gráfico. De haber sido normal, la distribución de puntos rojos sería prácticamente coincidente con la línea negra. Puesto que ello no ocurre en los extremos, se puede concluir con una no-normalidad de la variable de estudio.
+
+```{r}
+ggplot(tibble(x = NBADef$TRB), aes(sample = x))+
+      geom_qq(alpha = 0.2, color = "red") + 
+      geom_qq_line() + 
+      ggtitle("Datos normales") + 
+      xlab("") +  ylab("") + 
+      theme(plot.title = 
+            element_text(color="red", size = 14, face = "bold.italic"))
+```
+
+$\quad$
+
+Asimismo, también resulta interesante mostrar la relación entre los puntos y la eficiencia de tiro de los máximos anotadores promedio de la temporada.
+
+```{r}
+PPPEff = NBADef %>% 
+  select("Tm","Player","Pos","PTS","TS%") %>% 
+  filter(PTS > 26)
+```
+
+$\quad$
+
+```{r warning = FALSE}
+ggplot(PPPEff) + 
+  geom_point(aes(x = PTS, y = PPPEff$`TS%`, color = Player)) + 
+  xlab("Points") + 
+  ylab("Shooting Efficiency")
+
+```
+
+
+### **2.2. Cálculo de probabilidades**
+
++ **Si elegimos al azar un jugador de los Boston Celtics (BOS), ¿cual es la probabilidad de que tenga más de 25 años?**
+
+```{r}
+# Probabilidad de que sea de Boston
+pBOS = as.numeric(NBADef %>% 
+  count(Tm) %>% 
+  mutate(frecRel = n/sum(n)) %>%  
+  .[2,3])
+
+# Probabilidad de la interseccion (Boston y > 25 años)
+P25yBOS = as.numeric(NBADef %>% 
+  filter(Tm == "BOS" & Age > 25) %>%  
+  count()/nrow(NBADef))
+
+# Probabilidad condicionada
+(p25siBOS = P25yBOS/pBOS) 
+```
+
+$\quad$
+
++ **Si elegimos al azar 20 filas al azar y con reemplazamiento, ¿cual es la probablidad de que exactamente 7 de ellos hayan jugado 50 o más partidos (columna G)? ¿Y de que al menos 7 de ellos hayan jugado 50 o más?**
+
+```{r}
+# Probabilidad de haber jugado 50 o más partidos
+p50_mas = as.numeric((NBADef) %>%
+filter(G >= 50) %>%
+count()/nrow(NBADef))
+```
+
+
+```{r}
+#B(20, p50_mas) P[X = 7]
+(dbinom(4, size = 20, prob = p50_mas))
+
+#B(20, p50_mas) P[X >= 7] = 1 - P[X < 7]
+(1 - sum((dbinom(0:6, size = 20, prob = p50_mas))))
+```
+
+$\quad$
+
++ **Se supone que los triples de un equipo depende en su mayoría del escolta y el base. Se va a comprobar mediante una tabla de contingencia la relación entre escolta (SG) o base (PG) y algún triple anotado por partido.**
+
+```{r}
+escoltaBase = ifelse(NBADef$Pos == "SG" | NBADef$Pos == "PG", "Escolta_Base", "Otro")
+tripleAnotado = ifelse(NBADef$`3P` >= 1, "Triple", "NoTriple")
+```
+
+
+```{r}
+(tablaContingencia = table(escoltaBase, tripleAnotado))
+(tablaContingenciaAmpliada = addmargins(tablaContingencia))
+(tablaContingenciaRel = tablaContingenciaAmpliada/sum(tablaContingencia))
+```
+
+$\quad$
+
+```{r}
+# Probabilidad de que un escolta o base haya anotado un triple por partido
+(pEscoltaBaseTriple = tablaContingenciaRel[1,2])
+```
+
+$\quad$
+
+```{r}
+# Probabilidad de que un escolta o base no haya anotado un triple por partido
+tablaContingenciaRel[1,1]
+```
+
+$\quad$
+
+```{r}
+# Probabilidad de que algún no escolta o base no haya anotado algún triple por partido
+tablaContingenciaRel[2,1]
+```
+
+$\quad$
+
++ **Si las variables posición Escolta_Base y condición de meter algún triple por partido fueran independientes, se cumpliría: P(Escolta_Base_Triple) = P(Escolta_Base)·P(Triple).**
+
+```{r}
+pEscoltaBase = tablaContingenciaRel[1,3] 
+pTriple = tablaContingenciaRel[3,2]
+(pEscoltaBaseTripleIndep = pEscoltaBase * pTriple)
+```
+
+Comparamos con el valor obtenido anteriormente de la tabla de contingencia:
+
+```{r}
+pEscoltaBaseTriple - pEscoltaBaseTripleIndep
+```
+
+Puesto que la diferencia es de aproximadamente un 5,6%, podemos garantizar que ambas variables no son independientes.
+
+$\quad$
+
++ **Si elegimos de forma independiente (con remplazamiento) 15 jugadores, ¿cuál es la probabilidad de que 10 de ellos no sean ni escolta ni base?¿Cuántos jugadores habría que escoger entre esos 15 para garantizar un 50% de probabilidad de que hayan metido algún triple?**
+
+```{r}
+pOtro = 1 - pEscoltaBase
+(pOtro = dbinom(10, size = 15, prob = pOtro))
+
+(numJugadores = qbinom(p = 0.5, size = 15, prob = pTriple))
+
+```
+
+
+$\quad$
+
+
+### **2.3. Inferencia estadística y contraste de hipótesis**
+
++ **Asumiendo la normalidad de los datos, calcular un intervalo de confianza al 95% del total de rebotes de los pivots (Pos = C)**
+
+```{r}
+NBAPivot <- NBADef %>%
+  filter(Pos == "C")
+```
+
+
+```{r}
+n = length(NBAPivot$TRB)
+barX = mean(NBAPivot$TRB)
+s = sd(NBAPivot$TRB)
+nc = 0.95
+alfa = 1 - nc
+zc = qnorm(alfa/2, lower.tail = FALSE)
+(intervalo = signif((barX + c(-1,1) * zc * s /sqrt(n)), 4))
+```
+
+
+```{r}
+# Otra manera
+t.test(NBAPivot$TRB, conf.level = 0.95)
+```
+
+
+$\quad$
+
++ **Cogemos una muestra aleatoria de 10 jugadores de Houston (HOU) sin reemplazamiento. Contrastar la siguiente hipótesis nula: El número medio de minutos jugados es 30 (95% nivel de significancia)**
+
+```{r}
+set.seed(2019)
+nBAHouston <- NBADef %>%
+  filter(Tm == "HOU")
+muestra = nBAHouston[sample(1:nrow(nBAHouston), 10, replace = FALSE),]
+```
+
+
+```{r}
+# H0: Numero medio de mins jugados == 30
+barX = mean(muestra$MP)
+mu0 = 30
+s = sd(muestra$MP)
+n = nrow(muestra)
+estadistico = abs((barX-mu0))/(s/sqrt(n))
+signif(2*pt(estadistico, df = n - 1, lower.tail = FALSE), 4)
+```
+
+Puesto que el p-valor > 1 - nc = 0.05, aceptamos la hipótesis nula.
+
+
++ **Sospechamos que la cantidad media de puntos de los jugadores menores de 25 años es mayor que 7. ¿Avalan los datos esta sospecha, con un nivel de significación del 95% y asumiendo la normalidad de los datos?**
+
+```{r}
+NBA25 <- NBADef %>% 
+  filter(Age < 25)
+```
+
+
+```{r}
+# Hipótesis alternativa: Puntos anotados mayor que 7
+barX = mean(NBA25$PTS)
+mu0 = 7
+s = sd(NBA25$PTS)
+n = length(NBA25$PTS)
+estadistico = (barX-mu0)/(s/sqrt(n))
+signif(pnorm(estadistico, lower.tail = FALSE))
+```
+
+Como pvalor < 1 - 0.95 rechazamos la hipótesis nula y aceptamos la alternativa.
+
+
+$\quad$
+
+
+### **2.4. Regresión lineal**
+
++ **Se va a estudiar la relación entre los minutos jugados y las canastas anotadas en campo (sin contar tiros libres). Esta variable se refleja en la columna *FG*.**
+
+
+```{r}
+(plt = ggplot(NBADef) +
+  geom_point(aes(MP, FG), col ="darkgreen"))
+```
+
+
+```{r}
+modelo = lm(FG ~ MP, data = NBADef)
+```
+
+
+```{r}
+modelo$coefficients
+b0 = modelo$coefficients[1]
+b1 = modelo$coefficients[2]
+```
+
+
+```{r}
+(plt <- plt + geom_abline(intercept = b0, slope = b1,
+                         color="blue", size = 1.5))
+
+```
+
++ **¿Que porcentaje de la variabilidad de FG se explica con el modelo?**
+
+```{r}
+# Con el modelo se explica un 77,2% de la variabilidad de FG
+(R2 = cor(NBADef$FG, NBADef$MP)^2)
+```
+
+$\quad$
+
++ **¿Cúanto aumenta el FG por cada minuto jugado?**
+
+```{r}
+# Aumenta el valor de la pendiente de la recta de regresión
+unname(b1)
+```
+
+$\quad$
+
++ **¿Qué FG esperamos para alguien que juegue 20 minutos?**
+
+```{r}
+unname(predict(modelo, newdata = data.frame(MP = 20)))
+```
+
+### **2.5. Regresión logística**
+
+Para la regresión logística se va a crear una nueva variable de tipo *dummy* que tome valor 1 cuando un jugador haya anotado 5 o más canastas promedio por partido y 0 cuando no.
+
+```{r}
+NBADef <- NBADef %>% 
+  mutate(FG_5 = ifelse(FG >= 5, 1, 0))
+```
+
+$\quad$
+
+Con esta nueva columna se modela una regresión logística respecto a la variable de minutos jugados.
+
+```{r}
+glmPr = glm(FG_5 ~ MP, family = binomial, data = NBADef)
+```
+
+```{r}
+coefficients(glmPr)
+```
+$\quad$
+
+Con un modelo logístico y la función `predict` podemos hacer predicciones como hacíamos con un modelo lineal. Por ejemplo, ¿Cuál es la probabilidad de haber anotado más de cinco canastas (probabilidad de FG_5 = 1) que predice el modelo para un jugador con minutos jugados MP = 30 mins?
+
+```{r}
+FGPredecir = data.frame(MP = 30)
+(prob = unname(predict(glmPr, newdata = FGPredecir, type = 'response')))
+```
+
+Es decir, un `r signif(100 * prob, 2)`% de probabilidad de que un jugador que haya disputado 30 minutos anote más de 5 canastas promedio por partido.
+
+
+$\quad\\[5.5mm]$
+
+
+## **3. MODELADO DE UNA PREDICCIÓN**
+
+
+En este apartado se ha estimado un modelo de regresión logística a partir de los datos históricos de *ALL-STARS* durante las tres temporadas previas a la actual. Con dicho modelo se podría predecir los *ALL-STARS* del año actual de estudio.
+
+
+### **3.1. Preprocesado de los datasets iniciales**
+
+```{r echo = TRUE, message = FALSE, eval = TRUE}
+library(MLTools)
+library(caret)
+```
+
+
+En primer lugar, importamos los datasets que se emplearán como entrenamiento del modelo (*training set*).
+
+```{r message = FALSE}
+#2017-2018
+NBAStats1_2017 <- read_csv("data/NBAStats1_2017.csv")
+NBAStats2_2017 <- read_csv("data/NBAStats2_2017.csv")
+
+#2018-2019
+NBAStats1_2018 <- read_csv("data/NBAStats1_2018.csv")
+NBAStats2_2018 <- read_csv("data/NBAStats2_2018.csv")
+
+#2019-2020
+NBAStats1_2019 <- read_csv("data/NBAStats1_2019.csv")
+NBAStats2_2019 <- read_csv("data/NBAStats2_2019.csv")
+```
+
+$\quad$
+
+De nuevo, eliminamos las columnas vacías de datos, unimos los datos en una única tabla, separamos el nombre del jugador, etc... (el preprocesado de estos nuevos conjuntos de datos coincide con el realizado al inicio del proyecto).
+
+```{r}
+NBAStats2_2017  <- NBAStats2_2017  %>%
+  select(-...20,-...25)
+NBAStats2_2018  <- NBAStats2_2018  %>%
+  select(-...20,-...25)
+NBAStats2_2019  <- NBAStats2_2019  %>%
+  select(-...20,-...25)
+```
+
+```{r}
+TotalNBA2017 <- merge(x = NBAStats1_2017, y = NBAStats2_2017, by = c("Rk","Tm"))
+
+NBADef2017 <-  TotalNBA2017 %>%
+  select(-GS, -PF, -'eFG%', -Player.y, -Pos.y, -Age.y, -G.y, -MP.y, -FTr, -'WS/48', 
+         -OBPM, -DBPM, -VORP)
+
+NBADef2017 <- rename(NBADef2017, Player = Player.x, Pos = Pos.x, 
+                     Age = Age.x, G = G.x, MP = MP.x)
+```
+
+
+```{r}
+TotalNBA2018 <- merge(x = NBAStats1_2018, y = NBAStats2_2018, by = c("Rk","Tm"))
+
+NBADef2018 <-  TotalNBA2018 %>%
+  select(-GS, -PF, -'eFG%', -Player.y, -Pos.y, -Age.y, -G.y, -MP.y, -FTr, -'WS/48', 
+         -OBPM, -DBPM, -VORP)
+
+NBADef2018 <- rename(NBADef2018, Player = Player.x, Pos = Pos.x, 
+                     Age = Age.x, G = G.x, MP = MP.x)
+```
+
+
+```{r}
+TotalNBA2019 <- merge(x = NBAStats1_2019, y = NBAStats2_2019, by = c("Rk","Tm"))
+
+NBADef2019 <-  TotalNBA2019 %>%
+  select(-GS, -PF, -'eFG%', -Player.y, -Pos.y, -Age.y, -G.y, -MP.y, -FTr, -'WS/48', 
+         -OBPM, -DBPM, -VORP)
+
+NBADef2019 <- rename(NBADef2019, Player = Player.x, Pos = Pos.x, 
+                     Age = Age.x, G = G.x, MP = MP.x)
+```
+
+
+
+```{r warning = FALSE}
+NBADef2017 <- NBADef2017 %>% 
+  separate(col = Pos, sep = "-", into = c("Pos", NULL))
+
+NBADef2018 <- NBADef2018 %>% 
+  separate(col = Pos, sep = "-", into = c("Pos", NULL))
+
+NBADef2019 <- NBADef2019 %>% 
+  separate(col = Pos, sep = "-", into = c("Pos", NULL))
+
+```
+
+
+
+```{r warning = FALSE}
+NBADef2017 <- NBADef2017 %>% 
+  separate(col = Player, sep = '--', into = c("Player", NULL))
+
+NBADef2018 <- NBADef2018 %>% 
+  separate(col = Player, sep = '--', into = c("Player", NULL))
+
+NBADef2019 <- NBADef2019 %>% 
+  separate(col = Player, sep = '--', into = c("Player", NULL))
+
+```
+
+
+$\quad$
+
+
+### **3.2. Filtrado de los datos de entrenamiento**
+
+
+Para cada temporada se realiza un filtrado con el objetivo de seleccionar las estadísticas de los jugadores de forma única.
+
+```{r}
+Aux2017 = NBADef2017 %>%
+  group_by(Player) %>%
+  count()
+
+Filtrado2017_Tot <- merge(x = NBADef2017, y = Aux2017, by = c("Player"))
+
+Prev2017 = Filtrado2017_Tot %>%
+  filter((n == 1) | (n > 1 & Tm=="TOT"))
+```
+
+
+```{r}
+Aux2018 = NBADef2018 %>%
+  group_by(Player) %>%
+  count()
+
+Filtrado2018_Tot <- merge(x = NBADef2018, y = Aux2018, by = c("Player"))
+
+Prev2018 = Filtrado2018_Tot %>%
+  filter((n == 1) | (n > 1 & Tm == "TOT"))
+```
+
+
+```{r}
+Aux2019 = NBADef2019 %>%
+  group_by(Player) %>%
+  count()
+
+Filtrado2019_Tot <- merge(x = NBADef2019, y = Aux2019, by = c("Player"))
+
+Prev2019 = Filtrado2019_Tot %>%
+  filter((n == 1) | (n > 1 & Tm == "TOT"))
+
+```
+
+A su vez, para cada uno de los tres años anteriores se elabora un listado de los jugadores que han sido *ALL-STARS* y se crea una variable output (tipo *dummy*) en la tabla de manera que si el jugador está en la lista toma el valor de 1 y si no 0.
+
+```{r}
+AllStar2017 = c("Kyrie Irving","DeMar Derozan","Lebron James","Joel Embiid",
+                "Giannis Antetokounmpo","Bradley Beal","Goran Dragi?",
+                "Al Horford","Kevin Love","Kyle Lowry","Victor Oladipo",
+                "Kristaps Porzi??is", "John Wall","Andre Drummond","Stephen Curry",
+                "James Harden","Kevin Durant","DeMarcus Cousins",
+                "Anthony Davis","Russell Westbrook","Damian Lillard",
+                "Draymond Green","Karl-Anthony Towns","LaMarcus Aldridge",
+                "Klay Thompson","Jimmy Butler")
+
+Prev2017$Allstar = ifelse((Prev2017$Player %in% AllStar2017), 1, 0)
+```
+
+
+```{r}
+AllStar2018 = c("Kyrie Irving","Kemba Walker","Kawhi Leonard","Joel Embiid",
+                "Giannis Antetokounmpo","Kyle Lowry","Victor Oladipo",
+                "Khris Middleton","Bradley Beal","Ben Simmons",
+                "Blake Griffin","Nikola Vu?evi?","D'Angelo Russell",
+                "Stephen Curry","James Harden","Kevin Durant",
+                "Paul George","LeBron James","Anthony Davis",
+                "Russell Westbrook","Damian Lillard","Klay Thompson",
+                "Karl-Anthony Towns","LaMarcus Aldridge","Nikola Joki?")
+
+Prev2018$Allstar = ifelse((Prev2018$Player %in% AllStar2018), 1, 0)
+```
+
+
+```{r}
+AllStar2019 = c("Trae Young","Kemba Walker","Pascal Siakam","Joel Embiid",
+                "Giannis Antetokounmpo","Jimmy Butler","Bam Adebayo",
+                "Ben Simmons","Khris Middleton","Kyle Lowry","Domantas Sabonis",
+                "Jayson Tatum","Luka Don?i?","James Harden","LeBron James",
+                "Kawhi Leonard","Anthony Davis","Nikola Joki?","Damian Lillard",
+                "Rudy Gobert","Brandon Ingram","Chris Paul","Donovan Mitchell",
+                "Russell Westbrook","Devin Booker")
+
+Prev2019$Allstar = ifelse((Prev2019$Player %in% AllStar2019), 1, 0)
+```
+
+$\quad$
+
+Por último, hacemos un join para definir el set de entrenamiento:
+
+
+```{r}
+df_Training = union_all(union_all(Prev2017,Prev2018),Prev2019)
+df_Training <-  mutate_all(df_Training, ~ replace(., is.na(.), 0))
+```
+
+$\quad$
+
+
+### **3.3. Filtrado de los datos de testeo**
+
+Como set de testeo, utilizamos los datos de la temporada 2020. Por tanto, volvemos a repetir el proceso de preprocesado para este dataset.
+
+```{r message = FALSE}
+NBAStats1_2020 <- read_csv("data/NBAStats1_2020.csv")
+NBAStats2_2020 <- read_csv("data/NBAStats2_2020.csv")
+```
+
+
+```{r}
+NBAStats2_2020  <- NBAStats2_2020  %>%
+  select(-...20,-...25)
+```
+
+```{r}
+TotalNBA2020 <- merge(x = NBAStats1_2020, y = NBAStats2_2020, by = c("Rk","Tm"))
+
+NBADef2020 <-  TotalNBA2020 %>%
+  select(-GS, -PF, -'eFG%', -Player.y, -Pos.y, -Age.y, -G.y, -MP.y, -FTr, -'WS/48', 
+         -OBPM, -DBPM, -VORP)
+
+NBADef2020 <- rename(NBADef2020, Player = Player.x, Pos = Pos.x, 
+                     Age = Age.x, G = G.x, MP = MP.x)
+```
+
+
+```{r warning = FALSE}
+NBADef2020 <- NBADef2020 %>% 
+  separate(col = Pos, sep = "-", into = c("Pos", NULL))
+```
+
+
+```{r warning = FALSE}
+NBADef2020 <- NBADef2020 %>% 
+  separate(col = Player, sep = '--', into = c("Player", NULL))
+
+```
+
+
+```{r}
+Aux2020 = NBADef2020 %>%
+  group_by(Player) %>%
+  count()
+
+Filtrado2020_Tot <- merge(x = NBADef2020, y = Aux2020, by = c("Player"))
+
+Prev2020 = Filtrado2020_Tot %>%
+  filter((n == 1) | (n > 1 & Tm == "TOT"))
+
+```
+
+
+```{r}
+AllStar2020 = c("Bradley Beal","Kyrie Irving","Kevin Durant","Joel Embiid",
+              "Giannis Antetokounmpo","Jaylen Brown","James Harden",
+              "Zach LaVine","Ben Simmons","Julius Randle","Jayson Tatum",
+              "Nikola Vu?evi?","Domantas Sabonis","Stephen Curry","LeBron James",
+              "Nikola Joki?","Kawhi Leonard","Luka Don?i?","Damian Lillard",
+              "Rudy Gobert","Donovan Mitchell","Chris Paul","Anthony Davis",
+              "Paul George","Devin Booker","Zion Williamson","Mike Conley")
+
+Prev2020$Allstar = ifelse((Prev2020$Player %in% AllStar2020),1,0)
+
+df_Test = Prev2020
+df_Test <-  mutate_all(df_Test, ~ replace(., is.na(.), 0))
+```
+
+$\quad$
+
+
+### **3.4. Selección de variables más interesantes para el estudio**
+
+Eliminamos aquellas columnas innecesarias para el estudio y cambiamos las variables de tipo caracter a factor.
+
+```{r}
+df_Training <- df_Training %>%
+  select(-"Player",-"Rk",-"Age",-"3P",-"3PA",-"2P",-"2PA",-"2P%",-"FT",-"FTA",-"FT%",
+         -"ORB",-"DRB",-"TS%",-"3PAr",-"ORB%",-"DRB%",-"TRB%",-"AST%",-"STL%",-"BLK%",
+         -"TOV%",-"n")
+
+df_Training = df_Training %>% 
+  mutate(Y = Allstar) %>% 
+  mutate(Allstar = NULL)
+
+# Cambio de las variables de tipo caracter a factor
+df_Training$Y = as.factor(df_Training$Y)
+levels(df_Training$Y) = c("NO","YES")
+df_Training$Tm = as.factor(df_Training$Tm)
+df_Training$Pos = as.factor(df_Training$Pos)
+# summary(df_Training)
+```
+
+$\quad$
+
+Comprobamos la existencia de variables correladas con el siguiente gráfico.
+
+```{r echo = TRUE, message = FALSE, eval = TRUE}
+library(GGally)
+```
+
+
+```{r fig.height = 4, fig.width = 4, fig.align = 'center'}
+#Se dejan aunque se aprecia cierta correlacion lineal entre variables
+numvars <- sapply(df_Training, class) %in% c("integer","numeric")
+C <- cor(df_Training[,numvars])
+corrplot::corrplot(C)
+```
+
+
+
+### **3.5. Ajuste del modelo**
+
+
+Ante la situación en la que nos encontramos, donde disponemos de muchas más muestras de una clase (No AllStar) que de otra, se ha optado por recurrir a una técnica conocida como upSampling, para que el resultado de las métricas obtenidas con nuestro modelo no esté sesgado. 
+
+
+```{r}
+df_Training = upSample(df_Training[,-ncol(df_Training)],
+                     df_Training$Y)
+df_Training = df_Training %>% 
+  mutate(Y = Class) %>% 
+  mutate(Class = NULL)
+```
+
+$\quad$
+
+Se incluye en el modelo el método de validación cruzada.
+
+```{r}
+
+ctrl <- trainControl(method = "cv",                        #k-fold cross-validation
+                     number = 10,                          #Number of folds
+                     summaryFunction = defaultSummary,     #Performance summary 
+                     classProbs = TRUE)                    
+```
+
+$\quad$
+
+Se realiza el entrenamiento del modelo con el dataset unido de la información de los tres años anteriores. Se ha escogido el método de regresión logística para dicho entrenamiento.
+
+```{r warning = FALSE}
+set.seed(150)
+LogReg.fit <- train(form = Y ~ ., #formula for specifying inputs and outputs.
+                    data = df_Training,               #Training dataset 
+                    method = "glm",                   #Train logistic regression
+                    preProcess = c("center","scale"), #Center an scale inputs
+                    trControl = ctrl,                 #trainControl Object
+                    metric = "Accuracy")              #metric used for hyperparameters
+LogReg.fit     #información sobre el remuestreo empleado en el cross-validation
+# summary(LogReg.fit)
+```
+
+$\quad$
+
+Obtenemos el accuracy y el kappa obtenido a partir del remuestreo, los p-valores y la significancia de las variables.
+
+Quitamos la variable Tm, ya que se ve que no tiene demasiada significancia en la explicación de la variable respuesta (en el summary del modelo).
+
+
+```{r}
+df_Training=df_Training %>%
+  select(-Tm)
+```
+
+$\quad$
+
+Se vuelve a entrenar el modelo con la modificación realizada.
+
+```{r warning = FALSE}
+set.seed(150)
+LogReg.fit <- train(form = Y ~ ., #formula for specifying inputs and outputs.
+                    data = df_Training,               #Training dataset 
+                    method = "glm",                   #Train logistic regression
+                    preProcess = c("center","scale"), #Center an scale inputs
+                    trControl = ctrl,                 #trainControl Object
+                    metric = "Accuracy")              #metric used for hyperparameters
+
+
+LogReg.fit     #información sobre el remuestreo empleado en el cross-validation
+#summary(LogReg.fit) Para volver a ver la información
+```
+
+$\quad$
+
+Realizamos las mismas modificaciones en el dataset de testeo (2020) para incluir predicciones y poder realizar la evaluación
+
+```{r}
+fTR_eval <- df_Training
+df_Test <- df_Test %>%
+  select(-"Player",-"Rk",-"Age",-"3P",-"3PA",-"2P",-"2PA",-"2P%",-"FT",-"FTA",-"FT%",
+         -"ORB",-"DRB",-"TS%",-"3PAr",-"ORB%",-"DRB%",-"TRB%",-"AST%",-"STL%",-"BLK%",
+         -"TOV%",-"n",-"Tm")
+ 
+df_Test = df_Test %>% 
+  mutate(Y = Allstar) %>% 
+  mutate(Allstar = NULL)
+
+# Cambio de las variables de tipo caracter a factor
+df_Test$Y = as.factor(df_Test$Y)
+levels(df_Test$Y) = c("NO","YES")
+df_Test$Pos = as.factor(df_Test$Pos)
+fTS_eval <- df_Test
+```
+
+$\quad$
+
+### **3.6. Evaluación del modelo**
+
+```{r}
+### Evaluate model----Rellenamos dataset con predicciones
+### TEST
+fTS_eval$LRprob <- predict(LogReg.fit, type = "prob", 
+                           newdata = df_Test) # predict probabilities
+fTS_eval$LRpred <- predict(LogReg.fit, type = "raw", 
+                           newdata = df_Test) # predict classes 
+```
+
+$\quad$
+
+Se comprueban las métricas obtenidas para el set de testeo.
+
+```{r}
+### Evaluación del modelo -------------
+### Confusion matrices
+### TEST
+confusionMatrix(fTS_eval$LRpred, 
+                fTS_eval$Y, 
+                positive = "YES")
+```
+
+$\quad$
+
+De igual manera, se muestra la curva ROC obtenida para el set de validación y la curva ROC bajo la misma (0.991119)
+
+
+```{r fig.width = 6, fig.height = 4, fig.align = 'center'}
+### Classification performance plots 
+### TEST
+PlotClassPerformance(fTS_eval$Y,       
+                     fTS_eval$LRprob,  
+                     selClass = "YES")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
